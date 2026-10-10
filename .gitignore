@@ -1,0 +1,8 @@
+## .NET build output
+bin/
+obj/
+
+## Rider / VS IDE files (none are shared for this project)
+.idea/
+*.user
+*.suo
