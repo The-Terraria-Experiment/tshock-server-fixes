@@ -12,12 +12,13 @@ public sealed class ServerFixesPlugin : TerrariaPlugin
 {
     public override string Name => "ServerFixes";
     public override string Author => "Caleb Dougal";
-    public override string Description => "Workarounds for Terraria/TShock bugs: rope framing crash, vanishing mud balls.";
-    public override Version Version => new(1, 0, 0, 0);
+    public override string Description => "Workarounds for Terraria/TShock bugs: rope framing crash, vanishing mud balls, invisible NPCs.";
+    public override Version Version => new(1, 1, 0, 0);
 
     private ServerFixesConfig _config = new();
     private RopeFramingGuard? _ropeGuard;
     private ProjectileKillTileFix? _killFix;
+    private NpcStrikeAckFix? _ackFix;
     private Command? _command;
 
     public ServerFixesPlugin(Main game) : base(game)
@@ -40,6 +41,12 @@ public sealed class ServerFixesPlugin : TerrariaPlugin
             _killFix.Attach();
         }
 
+        if (_config.NpcStrikeAckFix)
+        {
+            _ackFix = new NpcStrikeAckFix(this);
+            _ackFix.Attach();
+        }
+
         _command = new Command("serverfixes.status", ShowStatus, "serverfixes")
         {
             HelpText = "Shows which ServerFixes are active and how often each has stepped in.",
@@ -48,7 +55,7 @@ public sealed class ServerFixesPlugin : TerrariaPlugin
         Commands.ChatCommands.Add(_command);
 
         TShock.Log.ConsoleInfo(
-            $"[ServerFixes] Rope framing guard: {OnOff(_ropeGuard)}. Projectile kill tile fix: {OnOff(_killFix)}.");
+            $"[ServerFixes] Rope framing guard: {OnOff(_ropeGuard)}. Projectile kill tile fix: {OnOff(_killFix)}. NPC strike ack fix: {OnOff(_ackFix)}.");
     }
 
     protected override void Dispose(bool disposing)
@@ -57,6 +64,7 @@ public sealed class ServerFixesPlugin : TerrariaPlugin
         {
             _ropeGuard?.Detach();
             _killFix?.Detach();
+            _ackFix?.Detach();
             if (_command is not null)
             {
                 Commands.ChatCommands.Remove(_command);
@@ -74,6 +82,9 @@ public sealed class ServerFixesPlugin : TerrariaPlugin
         args.Player.SendInfoMessage(_killFix is null
             ? "Projectile kill tile fix: off."
             : $"Projectile kill tile fix: on. {_killFix.Recovered} stale kills recorded.");
+        args.Player.SendInfoMessage(_ackFix is null
+            ? "NPC strike ack fix: off."
+            : $"NPC strike ack fix: on. {_ackFix.Acked} rejected strikes acked.");
     }
 
     private static string OnOff(object? fix) => fix is null ? "off" : "on";

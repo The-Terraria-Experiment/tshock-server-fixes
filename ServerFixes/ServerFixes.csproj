@@ -7,7 +7,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>ServerFixes</AssemblyName>
     <RootNamespace>ServerFixes</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <!-- Plugin loads into the running TShock server process; never emit the TShock/OTAPI
          assemblies into our output, only our own plugin DLL. -->
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>

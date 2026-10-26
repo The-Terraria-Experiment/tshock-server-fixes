@@ -15,6 +15,9 @@ internal sealed class ServerFixesConfig
     /// <summary>Record stale kills of tile-placing balls so their tile isn't rejected.</summary>
     public bool ProjectileKillTileFix { get; set; } = true;
 
+    /// <summary>Ack NPC strikes TShock rejects (prevents invisible, unhittable NPCs on 1.4.5.7+ clients).</summary>
+    public bool NpcStrikeAckFix { get; set; } = true;
+
     /// <summary>Log a console line each time the projectile fix steps in.</summary>
     public bool LogActivations { get; set; } = true;
 

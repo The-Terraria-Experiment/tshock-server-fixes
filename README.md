@@ -1,7 +1,7 @@
 # ServerFixes
 
-A TShock **6.2.1** plugin (.NET 9) that works around two bugs seen on the TTE fleet. Neither is ours
-to fix properly: one is in Terraria 1.4.5's own code, the other is a TShock 6.2 regression. Each fix
+A TShock **6.2.1** plugin (.NET 9) that works around three bugs seen on the TTE fleet. None is ours
+to fix properly: one is in Terraria 1.4.5's own code, and the other two are TShock 6.2 bugs. Each fix
 can be switched off on its own once upstream catches up.
 
 DISCLAIMER: This plugin is almost entirely created by AI. Use with caution.
@@ -49,6 +49,38 @@ This diagnosis comes from reading the source, not from watching it happen. Each 
 in it logs `[ServerFixes] Recorded stale kill of projectile …`. If those lines appear when the bug
 used to happen, and the mud stays, the diagnosis is confirmed.
 
+## Fix 3: invisible, unhittable NPCs
+
+**Symptom:** mobs turn invisible for a few seconds, usually right after being hit. While invisible
+they can't be damaged (projectiles pass through) but still deal contact damage and fire
+projectiles. They then reappear somewhere else at the health they had before the hit. A "killed" mob
+can linger invisibly like this. There is no lag. Rejoining fixes it for a while, then it comes back.
+Seen from 2026-10-03, and badly during the 2026-10-24 event.
+
+**Cause:** Terraria 1.4.5.7 added client-side hit prediction. A client records each hit it sends
+(StrikeNPC, packet 28) in `NPC.pendingDamages` and shows an NPC's life as the server's value minus
+every hit not yet acknowledged. The vanilla server answers *every* packet 28 with an empty packet
+162. It sends it before it even checks the NPC's generation, because strikes on a just-recycled NPC
+slot are normal. The client's `NPC.AckDamage` then pops the oldest pending hit, by position only.
+
+TShock 6.2.1 rejects strikes by marking the packet handled: a generation mismatch in
+`HandleNpcStrike` comes first, then Bouncer's disabled/throttled/range checks, town NPCs and so on.
+Vanilla's handler never runs, so no ack goes out. Each rejection leaves one hit in that client's
+queue for good, so damage is counted twice from then on. NPCs read as dead on the client while still
+alive on the server, until the stale entry works its way out of the queue. Rejoining clears the
+queue (`ClearWorld`). OTAPI 3.3.11 (TShock 6.1.0) has no ack at all, which is why this appeared with
+the 6.2.1 upgrade. Verified in OTAPI 3.3.14 (Terraria 1.4.5.8).
+
+**Fix:** `NpcStrikeAckFix` registers on NetGetData at priority -1000, after TShock and everything
+else. When packet 28 arrives already marked handled, it sends the sender packet 162, which is what
+vanilla would have done. Unhandled strikes are left alone because vanilla acks those itself, and a
+second ack would pop a hit that is still in flight. It never changes `Handled` and never applies the
+strike, so every TShock rejection still stands.
+
+Activations aren't logged per line, since on a busy server this fires on every rejected hit. Use
+`/serverfixes` to see the count. TShock logs the rejections themselves at debug level, so turning on
+`DebugLogs` shows which check is doing the rejecting.
+
 ## Build & install
 
 ```sh
@@ -68,9 +100,13 @@ On first start it writes `tshock/ServerFixes.json`:
 {
   "RopeFramingGuard": true,
   "ProjectileKillTileFix": true,
+  "NpcStrikeAckFix": true,
   "LogActivations": true
 }
 ```
+
+A key missing from an existing file reads as `true`, so a server upgraded from 1.0 gets new fixes
+switched on without the file being rewritten. `LogActivations` covers the projectile fix only.
 
 Changes take effect on the next restart. `/serverfixes` (permission `serverfixes.status`, also
 usable from the console) shows which fixes are on and how often each has stepped in.
@@ -85,15 +121,20 @@ dotnet test
   ping-pong cycle, recovers after an exception, and doesn't block other threads.
 - `RopeFramingHookTests`: calls the real `WorldGen.HandleRopeEndFraming` with out-of-world
   coordinates, so a Terraria update that stops raising the OTAPI hook fails here.
+- `NpcStrikeAckFixTests`: acks only handled strikes, and the client still has the
+  `AckDamage`/`pendingDamages` queue the ack feeds.
 - `ProjectileKillTileFixTests`: the stale-kill predicate, and the `ProjectileKey` bit layout the
   packet decode depends on.
 
 ## Upgrading TShock or Terraria
 
-Both fixes depend on internals, so re-check them before bumping the TShock package:
+All three fixes depend on internals, so re-check them before bumping the TShock package:
 
 - Rope: is `_preventInfiniteRopeFraming` still reset in `HandleRopeEndFraming`'s wrapper? If
   Re-Logic fixes it, turn `RopeFramingGuard` off.
 - Mud ball: does TShock's `HandleProjectileKill` still return before setting
   `LastKilledProjectile` for an inactive projectile? If it now records it, turn
   `ProjectileKillTileFix` off.
+- NPC ack: does TShock now send packet 162 itself when it rejects a strike (grep for `162` or
+  `AckDamage`)? If so, turn `NpcStrikeAckFix` off, or clients get two acks per rejected strike.
+  Also check vanilla still acks before its generation check in `MessageBuffer` case 28.
